@@ -1,11 +1,11 @@
 [makejinja]
 inputs = ["./template/overrides","./template/config"]
 output = "./"
-exclude_patterns = ["*.partial.yaml.j2"]
+exclude_patterns = ["*.partial.yaml.jinja"]
 data = ["./cluster.toml"]
 import_paths = ["./template/scripts"]
 loaders = ["plugin:Plugin"]
-jinja_suffix = ".j2"
+jinja_suffix = ".jinja"
 copy_metadata = true
 force = true
 undefined = "strict"

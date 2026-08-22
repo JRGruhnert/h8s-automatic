@@ -1,0 +1,15 @@
+#% if longhorn.backup_target and longhorn.backup_schedule %#
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: backup
+spec:
+  cron: "#{ longhorn.backup_schedule }#"
+  task: backup
+  retain: #{ longhorn.backup_retain }#
+  concurrency: 1
+  groups:
+    - default
+  labels: {}
+#% endif %#

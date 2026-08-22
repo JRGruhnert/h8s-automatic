@@ -119,19 +119,9 @@ def test_cert_sans_single_source():
     assert _load_raw(raw).cert_sans == ["127.0.0.1", "10.10.10.254"]
 
 
-def test_ingress_mode_follows_dns_provider():
-    cloudflare = config_from("public.toml", ingress=None)
-    assert _load_raw(cloudflare).ingress.mode == "cloudflare-tunnel"
-    internal = config_from("internal.toml")
-    assert (REPO_ROOT / ".github/template-tests/valid/internal.toml").exists()
-    assert "ingress" not in internal
-    assert _load_raw(internal).ingress.mode == "none"
-
-
-def test_direct_mode_requires_cloudflare_dns():
-    raw = config_from("internal.toml", **{"ingress.mode": "direct"})
-    with pytest.raises(ConfigError, match="requires dns.provider 'cloudflare'"):
-        _load_raw(raw)
+def test_ingress_mode_defaults_to_cloudflare_tunnel():
+    raw = config_from("public.toml", ingress=None)
+    assert _load_raw(raw).ingress.mode == "cloudflare-tunnel"
 
 
 def test_schematic_id_inherits_from_talos_section():

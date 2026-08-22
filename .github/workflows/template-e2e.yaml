@@ -121,7 +121,7 @@ jobs:
           install_args: --locked
 
       - name: Run init recipe
-        run: just init
+        run: mise run template:init
 
       - name: Prepare files
         run: |
@@ -130,7 +130,7 @@ jobs:
           touch kubeconfig
 
       - name: Run configure recipe
-        run: just configure
+        run: mise run template:configure
 
       # Rendered output must already match the format-yaml pre-commit hook,
       # otherwise every `just configure` shows up as formatting churn.
@@ -146,16 +146,16 @@ jobs:
         run: flate test all -p ./kubernetes/flux/cluster
 
       - name: Render bootstrap helmfile charts
-        run: just template test-helmfile
+        run: mise run template:test-helmfile
 
       - name: Dry run bootstrap talos recipe
-        run: just --dry-run bootstrap talos
+        run: mise run --dry-run bootstrap:talos
 
       - name: Create talos secret
-        run: just bootstrap talos-secret
+        run: mise run bootstrap:talos-secret
 
       - name: Render talos configs
-        run: just talos render
+        run: mise run talos:render
 
       - name: Validate talos configs
         run: |
@@ -164,10 +164,10 @@ jobs:
           done
 
       - name: Dry run bootstrap apps recipe
-        run: just --dry-run bootstrap apps
+        run: mise run --dry-run bootstrap:apps
 
       - name: Run reset recipe
-        run: yes | just template reset
+        run: yes | mise run template:reset
 
       - name: Run tidy recipe
-        run: yes | just template tidy
+        run: yes | mise run template:tidy

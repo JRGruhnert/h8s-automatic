@@ -64,6 +64,7 @@ def _asn(value: str) -> str:
 type Cidr = Annotated[IPv4Network, BeforeValidator(_network)]
 type Asn = Annotated[str, AfterValidator(_asn)]
 type Fqdn = Annotated[str, Field(pattern=FQDN_PATTERN)]
+type Access = Literal["public", "login", "mesh", "lan"]
 
 
 class Model(BaseModel):
@@ -117,8 +118,7 @@ class Kubernetes(Model):
 class Gateways(Model):
     internal: IPv4Address
     dns: IPv4Address
-    # Required when ingress.mode is not "none".
-    external: IPv4Address | None = None
+    external: IPv4Address
 
 
 class Repository(Model):
@@ -143,21 +143,82 @@ class Domain(Model):
     name: Fqdn
 
 
-class Dns(Model):
-    provider: Literal["cloudflare", "none"] = "cloudflare"
-    token: str = ""
+class Valkey(Model):
+    password: str = Field(min_length=1)
+
+
+class Longhorn(Model):
+    ui_enabled: bool = True
+    backup_target: str = ""
+    backup_schedule: str = ""
+    backup_retain: int = Field(default=3, ge=0)
+    replica_count: int | None = None
+    access: Access = "lan"
 
     @model_validator(mode="after")
     def check(self) -> Self:
-        if self.provider == "cloudflare" and not self.token:
-            raise ValueError("token is required when dns.provider is 'cloudflare'")
-        if self.provider == "none" and self.token:
-            raise ValueError("token must be empty when dns.provider is 'none'")
+        if self.backup_schedule and not self.backup_target:
+            raise ValueError("backup_schedule requires backup_target")
         return self
 
 
+class Jellyfin(Model):
+    media_size: str = "100Gi"
+    config_size: str = "5Gi"
+    access: Access = "lan"
+
+
+class Navidrome(Model):
+    music_size: str = "50Gi"
+    data_size: str = "1Gi"
+    access: Access = "lan"
+
+
+class Authelia(Model):
+    user: str = Field(min_length=1)
+    password_hash: str = Field(min_length=1)
+    session_secret: str = Field(min_length=1)
+    storage_encryption_key: str = Field(min_length=1)
+    jwt_secret: str = Field(min_length=1)
+    oidc_client_id: str = Field(min_length=1)
+    oidc_client_secret: str = Field(min_length=1)
+    storage_size: str = "1Gi"
+    access: Access = "lan"
+
+
+class OpenCloud(Model):
+    admin_password: str = Field(min_length=1)
+    storage_size: str = "30Gi"
+    config_size: str = "5Gi"
+    access: Access = "lan"
+
+
+class Woodpecker(Model):
+    forge: Literal["github", "gitlab", "gitea"] = "github"
+    admin: str = Field(min_length=1)
+    client: str = Field(min_length=1)
+    secret: str = Field(min_length=1)
+    forge_url: str = ""
+    storage_size: str = "10Gi"
+    access: Access = "lan"
+
+    @model_validator(mode="after")
+    def check(self) -> Self:
+        if self.forge == "gitea" and not self.forge_url:
+            raise ValueError("forge_url is required when forge is 'gitea'")
+        return self
+
+
+class Echo(Model):
+    access: Access = "lan"
+
+
+class Dns(Model):
+    token: str = Field(min_length=1)
+
+
 class Ingress(Model):
-    mode: Literal["cloudflare-tunnel", "direct", "none"] = "cloudflare-tunnel"
+    mode: Literal["cloudflare-tunnel", "direct"] = "cloudflare-tunnel"
 
 
 class Bgp(Model):
@@ -217,15 +278,17 @@ class Config(Model):
     gateways: Gateways
     repository: Repository
     domain: Domain
+    valkey: Valkey
+    authelia: Authelia
+    opencloud: OpenCloud
+    woodpecker: Woodpecker
     dns: Dns
-    # Defaults to "cloudflare-tunnel" when dns.provider is "cloudflare",
-    # otherwise "none".
-    ingress: Ingress = Field(
-        default_factory=lambda data: Ingress(
-            mode="cloudflare-tunnel" if data["dns"].provider == "cloudflare" else "none"
-        )
-    )
+    ingress: Ingress = Ingress()
     cilium: Cilium = Cilium()
+    longhorn: Longhorn
+    jellyfin: Jellyfin
+    navidrome: Navidrome
+    echo: Echo = Echo()
     talos: Talos = Talos()
     spegel: Spegel = Spegel()
     nodes: list[Node]
@@ -242,13 +305,6 @@ class Config(Model):
     @property
     def controller_count(self) -> int:
         return sum(1 for node in self.nodes if node.controller)
-
-    @computed_field
-    @property
-    def cluster_issuer(self) -> str:
-        if self.dns.provider == "cloudflare":
-            return "letsencrypt-production"
-        return "internal-ca"
 
     # Single source for the machine and apiServer certificate SAN lists,
     # which live in separate patch files.
@@ -269,15 +325,6 @@ class Config(Model):
                     f"nodes[{i}].schematic_id is required: set it on the node "
                     "or set a cluster-wide default in [talos]"
                 )
-        if self.ingress.mode != "none" and self.dns.provider != "cloudflare":
-            raise ValueError(
-                f"ingress.mode {self.ingress.mode!r} requires dns.provider 'cloudflare'"
-            )
-        if self.ingress.mode != "none" and self.gateways.external is None:
-            raise ValueError(
-                f"gateways.external is required when ingress.mode is {self.ingress.mode!r}"
-            )
-
         cidrs = {
             "network.node_cidr": self.network.node_cidr,
             "kubernetes.pod_cidr": self.kubernetes.pod_cidr,
@@ -293,10 +340,9 @@ class Config(Model):
             "kubernetes.api.addr": self.kubernetes.api.addr,
             "gateways.internal": self.gateways.internal,
             "gateways.dns": self.gateways.dns,
+            "gateways.external": self.gateways.external,
             "network.default_gateway": self.network.default_gateway,
         } | {f"nodes[{i}].address": n.address for i, n in enumerate(self.nodes)}
-        if self.gateways.external is not None:
-            addresses["gateways.external"] = self.gateways.external
         seen: dict[IPv4Address, str] = {}
         for owner, addr in addresses.items():
             if addr in seen:

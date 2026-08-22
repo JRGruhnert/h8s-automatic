@@ -7,12 +7,13 @@ addr = "10.10.10.254"
 [gateways]
 internal = "10.10.10.252"
 dns      = "10.10.10.253"
+external = "10.10.10.251"
 
 [domain]
 name = "example.com"
 
 [dns]
-provider = "none"
+token = "fake"
 
 [repository]
 url = "https://github.com/onedr0p/cluster-template.git"
@@ -24,3 +25,36 @@ controller   = true
 disk         = "/dev/sdfake"
 mac_addr     = "00:00:00:00:00:00"
 schematic_id = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+
+[valkey]
+password = "dGVzdA=="
+
+[authelia]
+user = "test"
+password_hash = "test"
+session_secret = "dGVzdA=="
+storage_encryption_key = "dGVzdA=="
+jwt_secret = "dGVzdA=="
+oidc_client_id = "opencloud"
+oidc_client_secret = "test"
+access = "public"
+
+[opencloud]
+admin_password = "test"
+access = "public"
+
+[woodpecker]
+forge = "github"
+admin = "test"
+client = "test"
+secret = "test"
+access = "public"
+
+[jellyfin]
+access = "mesh"
+
+[navidrome]
+access = "mesh"
+
+[longhorn]
+access = "lan"

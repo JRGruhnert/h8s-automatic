@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authelia-users
+data:
+  users_database.yml: |
+    users:
+      '#{ authelia.user }#':
+        disabled: false
+        displayname: '#{ authelia.user }#'
+        password: '#{ authelia.password_hash }#'
+        email: '#{ authelia.user }#@${SECRET_DOMAIN}'

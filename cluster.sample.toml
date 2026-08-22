@@ -105,7 +105,7 @@ dns = ""
 # the cloudflared tunnel) and handles traffic exposed to the public
 # internet. HTTPRoutes that reference this gateway become reachable via
 # your public domain.
-# REQUIRED unless ingress.mode is "none" (internal-only cluster).
+# REQUIRED.
 external = ""
 
 
@@ -169,40 +169,189 @@ name = ""
 
 
 # =============================================================================
-#    Public DNS authority and certificate issuance. With "cloudflare",
-#    external-dns publishes records automatically and cert-manager issues a
-#    Let's Encrypt wildcard via ACME DNS-01. With "none", nothing is
-#    published and the wildcard certificate is issued by an in-cluster
-#    self-signed CA instead (internal-only cluster).
+#    Valkey — Redis-compatible in-memory store used for Authelia sessions.
+# =============================================================================
+[valkey]
+
+# REQUIRED. Password for the Valkey store. Generate with: openssl rand -base64 32
+password = ""
+
+
+# =============================================================================
+#    Authelia — single sign-on and authentication server (forward-auth + OIDC).
+#    One instance fronts every app. Users are password + optional 2FA (WebAuthn).
+# =============================================================================
+[authelia]
+
+# Initial user (created in the file user backend). REQUIRED.
+user = ""
+
+# Argon2 hash of the initial user's password. Generate with:
+#   docker run authelia/authelia crypto hash generate argon2 --password '<pw>'
+# REQUIRED.
+password_hash = ""
+
+# Session / storage / JWT secrets. Generate each with: openssl rand -base64 32
+# REQUIRED.
+session_secret = ""
+storage_encryption_key = ""
+jwt_secret = ""
+
+# OIDC client for OpenCloud (defined in Authelia's config). REQUIRED.
+oidc_client_id = "opencloud"
+oidc_client_secret = ""
+
+# Size of the Authelia data volume (SQLite + generated keys).
+# OPTIONAL. Default: "1Gi"
+
+# storage_size = "1Gi"
+
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (public DNS + Authelia SSO) | "lan".
+# access = "lan"
+
+
+# =============================================================================
+#    OpenCloud — self-hosted cloud collaboration (files, office). Authenticates
+#    against Authelia via OIDC (client defined in the [authelia] section).
+# =============================================================================
+[opencloud]
+
+# REQUIRED. Initial admin password (internal IDM, used at first init).
+admin_password = ""
+
+# Size of the OpenCloud data volume.
+# OPTIONAL. Default: "30Gi"
+
+# storage_size = "30Gi"
+
+# Size of the OpenCloud config volume.
+# OPTIONAL. Default: "5Gi"
+
+# config_size = "5Gi"
+
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (public DNS + Authelia SSO) | "lan".
+# access = "lan"
+
+
+# =============================================================================
+#    Woodpecker CI. Woodpecker logs in against your git forge via OAuth and
+#    receives webhooks to trigger pipelines. The server must be reachable from
+#    the forge (OAuth callback + webhooks) — expose it via the external gateway.
+# =============================================================================
+[woodpecker]
+
+# OPTIONAL. Default: "github". Allowed: "github" | "gitlab" | "gitea"
+#   - "gitea" also covers Forgejo (self-hosted, requires forge_url below).
+#   - "gitlab" defaults to gitlab.com unless forge_url is set.
+
+# forge = "github"
+
+# Your username on the forge; becomes the Woodpecker admin.
+# REQUIRED.
+admin = ""
+
+# OAuth application client ID and secret from your forge. Create an OAuth
+# app and set its callback URL to https://woodpecker.<domain>/authorize.
+# REQUIRED.
+client = ""
+secret = ""
+
+# Base URL of a self-hosted forge. REQUIRED when forge is "gitea"; optional
+# for "gitlab" (self-hosted instances). Example: "https://forgejo.example.com"
+# OPTIONAL.
+
+# forge_url = ""
+
+# Size of the Woodpecker data volume (SQLite + logs).
+# OPTIONAL. Default: "10Gi"
+
+# storage_size = "10Gi"
+
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (public DNS + Authelia SSO) | "lan".
+# access = "lan"
+
+
+# =============================================================================
+#    Jellyfin — media server. Storage sizes only; media sharing with the *arr
+#    stack can be added later by switching the media volume to RWX.
+# =============================================================================
+[jellyfin]
+
+# Size of the Jellyfin media volume.
+# OPTIONAL. Default: "100Gi"
+
+# media_size = "100Gi"
+
+# Size of the Jellyfin config volume.
+# OPTIONAL. Default: "5Gi"
+
+# config_size = "5Gi"
+
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (public DNS + Authelia SSO) | "lan".
+# access = "lan"
+
+
+# =============================================================================
+#    Navidrome — self-hosted music server (Subsonic-compatible API). The first
+#    user you register in the web UI becomes the admin.
+# =============================================================================
+[navidrome]
+
+# Size of the music library volume.
+# OPTIONAL. Default: "50Gi"
+
+# music_size = "50Gi"
+
+# Size of the Navidrome data volume (SQLite + cache).
+# OPTIONAL. Default: "1Gi"
+
+# data_size = "1Gi"
+
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (public DNS + Authelia SSO) | "lan".
+# access = "lan"
+
+
+# =============================================================================
+#    Echo — simple test server that reports back the request it received.
+#    Useful for smoke-testing routing and DNS.
+# =============================================================================
+[echo]
+
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (public DNS + Authelia SSO) | "lan".
+# access = "lan"
+
+
+# =============================================================================
+#    Public DNS authority and certificate issuance. external-dns publishes
+#    records to Cloudflare automatically and cert-manager issues a Let's
+#    Encrypt wildcard via ACME DNS-01.
 # =============================================================================
 [dns]
-
-# OPTIONAL. Default: "cloudflare". Allowed: "cloudflare" | "none"
-
-# provider = "cloudflare"
 
 # Cloudflare API token (NOT the global API key) with `Zone - DNS - Edit` and
 # `Account - Cloudflare Tunnel - Read` permissions, scoped to the zone
 # above. See the README for token creation steps.
-# REQUIRED when provider is "cloudflare"; must be empty otherwise.
+# REQUIRED.
 token = ""
 
 
 # =============================================================================
 #    How the public internet reaches the cluster's external gateway. With
 #    "cloudflare-tunnel", cloudflared connects outbound so no ports are
-#    forwarded (requires dns.provider = "cloudflare" and
-#    cloudflare-tunnel.json). With "direct", you forward TCP 443 (and
-#    optionally 80) on your router to gateways.external and point an
-#    `external.<domain>` DNS record at your WAN address (A record or DDNS
-#    CNAME) yourself; per-app records are still published automatically.
-#    With "none", nothing is exposed and apps are only reachable on your
-#    LAN via the internal gateway.
+#    forwarded (requires cloudflare-tunnel.json). With "direct", you forward
+#    TCP 443 (and optionally 80) on your router to gateways.external and
+#    point an `external.<domain>` DNS record at your WAN address (A record or
+#    DDNS CNAME) yourself; per-app records are still published automatically.
 # =============================================================================
 [ingress]
 
-# OPTIONAL. Default: "cloudflare-tunnel" when dns.provider is "cloudflare",
-# otherwise "none". Allowed: "cloudflare-tunnel" | "direct" | "none"
+# OPTIONAL. Default: "cloudflare-tunnel". Allowed: "cloudflare-tunnel" | "direct"
 
 # mode = "cloudflare-tunnel"
 
@@ -245,6 +394,47 @@ token = ""
 # OPTIONAL. Example: "64514"
 
 # node_asn = ""
+
+
+# =============================================================================
+#    Longhorn block storage. Sane defaults for most setups; only fill in the
+#    backup fields if you want automatic volume backups.
+# =============================================================================
+[longhorn]
+
+# Expose the Longhorn UI on the internal gateway.
+# OPTIONAL. Default: true
+
+# ui_enabled = true
+
+# Backup target URL (e.g. "nfs://server:/export" or "s3://bucket@region/path").
+# Empty disables backups. s3:// targets additionally require a `longhorn-backup`
+# secret with AWS credentials in the longhorn-system namespace.
+# OPTIONAL.
+
+# backup_target = ""
+
+# Cron expression for automatic backups (e.g. "@daily" or "0 2 * * *").
+# Requires backup_target.
+# OPTIONAL.
+
+# backup_schedule = ""
+
+# Number of backups to retain.
+# OPTIONAL. Default: 3
+
+# backup_retain = 3
+
+# Replica count for the default Longhorn StorageClass. Defaults to 2 on
+# multi-node clusters and 1 on a single node.
+# OPTIONAL.
+
+# replica_count = 2
+
+# Access mode for the Longhorn UI.
+# OPTIONAL. Default: "lan" (private, reachable only on your home network).
+#   "public" (public DNS) | "login" (DNS + Authelia SSO) | "lan".
+# access = "lan"
 
 
 # =============================================================================

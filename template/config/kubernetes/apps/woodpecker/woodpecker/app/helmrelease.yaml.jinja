@@ -1,0 +1,64 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: woodpecker
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: woodpecker
+  interval: 1h
+  values:
+    agent:
+      replicaCount: 1
+      env:
+        WOODPECKER_SERVER: woodpecker-server:9000
+        WOODPECKER_BACKEND: kubernetes
+    server:
+      env:
+        WOODPECKER_ADMIN: "#{ woodpecker.admin }#"
+        WOODPECKER_HOST: "https://woodpecker.${SECRET_DOMAIN}"
+#% if woodpecker.forge == 'github' %#
+        WOODPECKER_GITHUB: "true"
+        WOODPECKER_GITHUB_CLIENT:
+          valueFrom:
+            secretKeyRef:
+              name: woodpecker-forge
+              key: client
+        WOODPECKER_GITHUB_SECRET:
+          valueFrom:
+            secretKeyRef:
+              name: woodpecker-forge
+              key: secret
+#% elif woodpecker.forge == 'gitlab' %#
+        WOODPECKER_GITLAB: "true"
+        WOODPECKER_GITLAB_CLIENT:
+          valueFrom:
+            secretKeyRef:
+              name: woodpecker-forge
+              key: client
+        WOODPECKER_GITLAB_SECRET:
+          valueFrom:
+            secretKeyRef:
+              name: woodpecker-forge
+              key: secret
+#% if woodpecker.forge_url %#
+        WOODPECKER_GITLAB_URL: "#{ woodpecker.forge_url }#"
+#% endif %#
+#% else %#
+        WOODPECKER_GITEA: "true"
+        WOODPECKER_GITEA_CLIENT:
+          valueFrom:
+            secretKeyRef:
+              name: woodpecker-forge
+              key: client
+        WOODPECKER_GITEA_SECRET:
+          valueFrom:
+            secretKeyRef:
+              name: woodpecker-forge
+              key: secret
+        WOODPECKER_GITEA_URL: "#{ woodpecker.forge_url }#"
+#% endif %#
+      persistentVolume:
+        enabled: true
+        size: "#{ woodpecker.storage_size }#"

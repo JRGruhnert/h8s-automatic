@@ -1,0 +1,82 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authelia-config
+data:
+  configuration.yaml: |
+    server:
+      address: 'tcp://0.0.0.0:9091'
+      endpoints:
+        authz:
+          ext-authz:
+            enabled: true
+
+    identity_validation:
+      reset_password:
+        jwt_secret:
+          path: /secrets/jwt_secret
+
+    authentication_backend:
+      file:
+        path: /config/users_database.yml
+        password:
+          algorithm: argon2
+
+    session:
+      secret:
+        path: /secrets/session_secret
+      redis:
+        host: valkey.valkey.svc
+        port: 6379
+        password:
+          path: /secrets/redis_password
+      domain: '${SECRET_DOMAIN}'
+      cookies:
+        - domain: '${SECRET_DOMAIN}'
+          authelia_url: 'https://idp.${SECRET_DOMAIN}'
+          default_redirection_url: 'https://idp.${SECRET_DOMAIN}'
+
+    storage:
+      local:
+        path: /config/db.sqlite3
+      encryption_key:
+        path: /secrets/storage_encryption_key
+
+    access_control:
+      default_policy: deny
+      rules:
+        - domain: 'idp.${SECRET_DOMAIN}'
+          policy: bypass
+#% if jellyfin.access == 'login' %#
+        - domain: 'jellyfin.${SECRET_DOMAIN}'
+          policy: one_factor
+#% endif %#
+#% if navidrome.access == 'login' %#
+        - domain: 'navidrome.${SECRET_DOMAIN}'
+          policy: one_factor
+#% endif %#
+#% if longhorn.access == 'login' %#
+        - domain: 'longhorn.${SECRET_DOMAIN}'
+          policy: one_factor
+#% endif %#
+
+    notifier:
+      filesystem:
+        filename: /config/notifications.txt
+
+    identity_providers:
+      oidc:
+        hmac_secret:
+          path: /secrets/oidc_hmac_secret
+        clients:
+          - client_id: '#{ authelia.oidc_client_id }#'
+            client_secret:
+              path: /secrets/oidc_client_secret
+            authorization_policy: one_factor
+            redirect_uris:
+              - 'https://cloud.${SECRET_DOMAIN}/'
+            scopes: [openid, profile, email, groups]
+            response_types: [code]
+            grant_types: [authorization_code, refresh_token]
+            token_endpoint_auth_method: client_secret_basic

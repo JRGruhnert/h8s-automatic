@@ -1,0 +1,16 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: network
+
+components:
+  - ../../components/sops
+
+resources:
+  - ./namespace.yaml
+  - ./cloudflare-dns/ks.yaml
+  #% if ingress.mode == 'cloudflare-tunnel' %#
+  - ./cloudflare-tunnel/ks.yaml
+  #% endif %#
+  - ./gateway/ks.yaml
+  - ./k8s-gateway/ks.yaml

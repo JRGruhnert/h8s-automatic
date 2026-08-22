@@ -1,0 +1,88 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencloud
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opencloud
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opencloud
+    spec:
+      containers:
+        - name: opencloud
+          image: docker.io/opencloudeu/opencloud-rolling:7.4.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh"]
+          args: ["-c", "opencloud init || true; opencloud server"]
+          ports:
+            - containerPort: 9200
+              name: http
+          env:
+            - name: OC_URL
+              value: "https://cloud.${SECRET_DOMAIN}"
+            - name: OC_INSECURE
+              value: "true"
+            - name: PROXY_TLS
+              value: "false"
+            - name: OC_EXCLUDE_RUN_SERVICES
+              value: "idp"
+            - name: OC_OIDC_ISSUER
+              value: "https://idp.${SECRET_DOMAIN}/"
+            - name: WEB_OIDC_METADATA_URL
+              value: "https://idp.${SECRET_DOMAIN}/.well-known/openid-configuration"
+            - name: WEB_OIDC_CLIENT_ID
+              value: "#{ authelia.oidc_client_id }#"
+            - name: WEB_OIDC_SCOPE
+              value: "openid profile email groups roles"
+            - name: PROXY_AUTOPROVISION_ACCOUNTS
+              value: "true"
+            - name: PROXY_ROLE_ASSIGNMENT_DRIVER
+              value: "oidc"
+            - name: PROXY_OIDC_REWRITE_WELLKNOWN
+              value: "true"
+            - name: PROXY_USER_OIDC_CLAIM
+              value: "preferred_username"
+            - name: PROXY_USER_CS3_CLAIM
+              value: "username"
+            - name: PROXY_OIDC_ACCESS_TOKEN_VERIFY_METHOD
+              value: "jwt"
+            - name: PROXY_ROLE_ASSIGNMENT_OIDC_CLAIM
+              value: "roles"
+            - name: GRAPH_ASSIGN_DEFAULT_USER_ROLE
+              value: "false"
+            - name: GRAPH_USERNAME_MATCH
+              value: "none"
+            - name: OC_ADMIN_USER_ID
+              value: ""
+            - name: IDM_CREATE_DEMO_USERS
+              value: "false"
+            - name: IDM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opencloud-secret
+                  key: admin-password
+          volumeMounts:
+            - name: config
+              mountPath: /etc/opencloud
+            - name: data
+              mountPath: /var/lib/opencloud
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: opencloud-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: opencloud-data

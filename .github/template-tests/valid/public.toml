@@ -57,3 +57,36 @@ mtu            = 1500
 secureboot     = true
 encrypt_disk   = true
 kernel_modules = ["nvidia", "nvidia_uvm"]
+
+[valkey]
+password = "dGVzdA=="
+
+[authelia]
+user = "test"
+password_hash = "test"
+session_secret = "dGVzdA=="
+storage_encryption_key = "dGVzdA=="
+jwt_secret = "dGVzdA=="
+oidc_client_id = "opencloud"
+oidc_client_secret = "test"
+access = "public"
+
+[opencloud]
+admin_password = "test"
+access = "public"
+
+[woodpecker]
+forge = "github"
+admin = "test"
+client = "test"
+secret = "test"
+access = "public"
+
+[jellyfin]
+access = "mesh"
+
+[navidrome]
+access = "mesh"
+
+[longhorn]
+access = "lan"

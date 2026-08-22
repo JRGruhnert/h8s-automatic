@@ -1,0 +1,44 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/helmfile
+
+# Bootstraps cluster-wide Custom Resource Definitions (CRDs) by extracting them
+# from upstream Helm charts and applying them directly with kubectl. The releases
+# below are never reconciled with helmfile apply or helmfile sync — only their
+# CRDs are rendered (via --include-crds) and piped to the cluster.
+#
+# Installing CRDs out-of-band ensures they exist before Flux begins reconciling
+# workloads that reference them, avoiding the need for dependsOn chains on nearly
+# every Kustomization that consumes a CRD-backed resource.
+
+helmDefaults:
+  args:
+    - --include-crds
+    - --no-hooks
+
+bases:
+  - default.yaml
+
+releases:
+  - name: cloudflare-dns
+    namespace: network
+    inherit:
+      - template: default
+
+  - name: gateway-api
+    namespace: network
+    # Provides the standard Gateway API CRDs (v1.6.1) that the Cilium Gateway
+    # API controller requires. The chart is used only for its bundled CRDs.
+    # The experimental channel is required for the ExternalAuth filter used to
+    # wire Authelia forward-auth into the Cilium Gateway API.
+    chart: oci://mirror.gcr.io/envoyproxy/gateway-crds-helm
+    version: 1.9.0
+    values:
+      - crds:
+          gatewayAPI:
+            enabled: true
+            channel: experimental
+
+  - name: prometheus-operator-crds
+    namespace: observability
+    chart: oci://ghcr.io/prometheus-community/charts/prometheus-operator-crds
+    version: 29.0.0

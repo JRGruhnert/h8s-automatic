@@ -1,7 +1,11 @@
 # ⛵ Cluster Template
+
 At its core, this project leverages [makejinja](https://github.com/mirkolenz/makejinja), a powerful tool for rendering templates. By reading the [cluster.toml](./cluster.sample.toml) configuration file—validated and defaulted by [pydantic](https://docs.pydantic.dev/)—Makejinja generates the necessary configurations to deploy a Kubernetes cluster.
+
 ## Bootstrap
+
 ### Stage 1: Local Workstation
+
 0. **Clone** Clone the project and cd into the repo directory.
 1. **Install** the [Mise CLI](https://mise.jdx.dev/getting-started.html#installing-mise-cli) on your local workstation.
 
@@ -13,10 +17,11 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
     mise trust
     mise install
     ```
-5. Logout of the GitHub Container Registry as this may cause authorization problems in future steps when using the public registry:
+
+4. Logout of the GitHub Container Registry as this may cause authorization problems in future steps when using the public registry:
 
     ```sh
-    docker logout ghcr.io
+    podman logout ghcr.io
     helm registry logout ghcr.io
     ```
 
@@ -33,6 +38,9 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
 
 1. Head over to the [Talos Linux Image Factory](https://factory.talos.dev) and follow the instructions. Be sure to only choose the **bare-minimum system extensions** as some might require additional configuration and prevent Talos from booting without it. Depending on your CPU start with the Intel/AMD system extensions (`i915`, `intel-ucode` & `mei` **or** `amdgpu` & `amd-ucode`), you can always add system extensions after Talos is installed and working.
 
+    > [!TIP]
+    > **Planning to run Longhorn?** Add the `siderolabs/iscsi-tools` and `siderolabs/nfs-utils` storage extensions to your schematic up front. Longhorn's iSCSI-based V1 data engine won't function without `iscsi-tools`, and `nfs-utils` is required for RWX/NFS-backed volumes. Adding extensions later means rebuilding the schematic and upgrading every node, so it's easiest to include them from the start.
+
 2. This will eventually lead you to download a Talos Linux ISO (or for SBCs a RAW) image. Make sure to note the **schematic ID** you will need this later on.
 
 3. Flash the Talos ISO or RAW image to a USB drive and boot from it on your nodes.
@@ -42,11 +50,8 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
     ```sh
     nmap -Pn -n -p 50000 192.168.1.0/24 -vv | grep 'Discovered'
     ```
-    
-### Stage 3: Cloudflare configuration
 
-> [!TIP]
-> **Internal-only cluster?** Set `provider = "none"` under `[dns]` in `cluster.toml` and skip this stage entirely: no Cloudflare account, API token, or `cloudflare-tunnel.json` is needed. Nothing is exposed to the internet, apps are reachable on your LAN via the internal gateway, and the wildcard certificate is issued by an in-cluster self-signed CA instead of Let's Encrypt.
+### Stage 3: Cloudflare configuration
 
 > [!WARNING]
 > If any of the commands fail with `command not found` or `unknown command` it means `mise` is either not installed, activated or it could be configured incorrectly.
@@ -73,7 +78,7 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
 1. Generate the config files from the sample files:
 
     ```sh
-    just init
+    mise run template:init
     ```
 
 2. Fill out the `cluster.toml` configuration file using the comments in it as a guide.
@@ -81,7 +86,7 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
 3. Template out the kubernetes and talos configuration files, if any issues come up be sure to read the error and adjust your config files accordingly.
 
     ```sh
-    just configure
+    mise run template:configure
     ```
 
 4. Push your changes to git:
@@ -99,13 +104,13 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
 1. Install Talos:
 
     ```sh
-    just bootstrap talos
+    mise run bootstrap:talos
     ```
 
 2. Install cilium, coredns, spegel, flux and sync the cluster to the repository state:
 
     ```sh
-    just bootstrap apps
+    mise run bootstrap:apps
     ```
 
 3. Watch the rollout of your cluster happen:
@@ -124,7 +129,7 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
 
 2. Check the status of Flux and if the Flux resources are up-to-date and in a ready state:
 
-    📍 _Run `just kube reconcile` to force Flux to sync your Git repository state_
+    📍 _Run `mise run kube:reconcile` to force Flux to sync your Git repository state_
 
     ```sh
     flux check
@@ -154,18 +159,23 @@ At its core, this project leverages [makejinja](https://github.com/mirkolenz/mak
     ```sh
     kubectl -n network describe certificates
     ```
+
 ## Changes i need to do:
-### 🌐 Public DNS
+
+### 🌐 Exposing applications
+
+Every application has an `access` setting in `cluster.toml` that controls how it is reached:
+
+| `access`        | Reachable via                                |
+| --------------- | -------------------------------------------- |
+| `lan` (default) | Home network only (`envoy-internal` gateway) |
+| `public`        | Public DNS (`envoy-external` gateway)        |
+| `login`         | Public DNS + Authelia SSO                    |
+
+Apps default to `lan`, i.e. **private on your home network**. To expose one publicly, set its `access = "public"` (or `"login"` for SSO) and re-render. Only `flux-webhook` is public by default.
 
 > [!TIP]
-> Use the `envoy-external` gateway on `HTTPRoutes` to make applications public to the internet. These are also accessible on your private network once you set up split DNS.
-
-The `external-dns` application created in the `network` namespace will handle creating public DNS records. By default, `echo` and the `flux-webhook` are the only subdomains reachable from the public internet. In order to make additional applications public you must **set the correct gateway** like in the HelmRelease for `echo`.
-
-### 🏠 Home DNS
-
-> [!TIP]
-> Use the `envoy-internal` gateway on `HTTPRoutes` to make applications private to your network. If you're having trouble with internal DNS resolution check out [this](https://github.com/onedr0p/cluster-template/discussions/719) GitHub discussion.
+> `external-dns` publishes public DNS records automatically, and `cert-manager` issues a wildcard certificate. Private apps are served from the `envoy-internal` gateway and resolved on your network via `k8s_gateway` + split DNS.
 
 `k8s_gateway` will provide DNS resolution to external Kubernetes resources (i.e. points of entry to the cluster) from any device that uses your home DNS server. For this to work, your home DNS server must be configured to forward DNS queries for `${cloudflare_domain}` to `${gateways_dns}` instead of the upstream DNS server(s) it normally uses. This is a form of **split DNS** (aka split-horizon DNS / conditional forwarding).
 
@@ -197,12 +207,81 @@ By default Flux will periodically check your git repository for changes. In-orde
     - **GitLab**: under "Settings/Webhooks" fill in the webhook URL, paste the token as the secret token, check the push events trigger, and save. Also set `webhook_provider = "gitlab"` in `cluster.toml`.
     - **Gitea/Forgejo**: under "Settings/Webhooks" add a **Gitea/Forgejo** webhook with the webhook URL, method `POST`, content type `application/json`, paste the token as the secret, trigger on push events, and save. Keep the default `webhook_provider = "github"` since these providers emulate GitHub webhooks.
 
+### 🪵 Woodpecker CI
+
+`woodpecker` provides CI for your repositories. It logs in against your git forge via OAuth and receives webhooks that trigger pipelines on push. Configure it once with an OAuth app on your forge.
+
+1. Create an OAuth application on your forge and note the **client ID** and **client secret**:
+
+    - **GitHub**: under "Settings → Developer settings → OAuth Apps" press "New OAuth App". Set the callback URL to `https://woodpecker.${cloudflare_domain}/authorize`.
+    - **GitLab**: under "User Settings → Applications" add an application with callback URL `https://woodpecker.${cloudflare_domain}/authorize` and the `api` scope.
+    - **Gitea/Forgejo**: under "Settings → Applications → Manage OAuth2 Applications" create an application with the callback URL `https://woodpecker.${cloudflare_domain}/authorize`.
+
+2. Fill in the `[woodpecker]` section in `cluster.toml`:
+
+    ```toml
+    [woodpecker]
+    forge = "github"        # github | gitlab | gitea (gitea also covers Forgejo)
+    admin = "your-username"
+    client = "oauth-client-id"
+    secret = "oauth-client-secret"
+    # forge_url = "https://forgejo.example.com"   # self-hosted GitLab/Gitea
+    ```
+
+3. Re-render and push:
+
+    ```sh
+    mise run template:configure
+    git add -A
+    git commit -m "feat: configure woodpecker forge"
+    git push
+    ```
+
+4. Make Woodpecker reachable from the forge: for a public forge (GitHub, GitLab.com) the forge must reach the OAuth callback and deliver webhooks, so set `access = "public"` under `[woodpecker]` in `cluster.toml` and re-render. For a self-hosted forge on your LAN, the default `access = "lan"` is enough.
+
+5. Log in at `https://woodpecker.${cloudflare_domain}` and authorize the app — your account becomes the admin.
+
+### 🛡️ Single Sign-On (Authelia)
+
+`authelia` is the identity provider at `https://idp.${cloudflare_domain}`. It provides password + 2FA (WebAuthn/TOTP) login, forward-auth for apps without their own login, and OIDC for apps that speak it.
+
+1. Generate an Argon2 hash of your password:
+
+    ```sh
+    docker run authelia/authelia crypto hash generate argon2 --password '<your-password>'
+    ```
+
+2. Fill in the `[authelia]` section in `cluster.toml` (generate each secret with `openssl rand -base64 32`):
+
+    ```toml
+    [authelia]
+    user = "your-username"
+    password_hash = "$argon2id$..."      # from step 1
+    session_secret = "..."
+    storage_encryption_key = "..."
+    jwt_secret = "..."
+    oidc_client_id = "opencloud"        # default
+    oidc_client_secret = "..."          # openssl rand -base64 32
+    ```
+
+3. Re-render and push, then log in at `https://idp.${cloudflare_domain}` with the user from step 2 and register a second factor:
+
+    ```sh
+    mise run template:configure
+    git add -A && git commit -m "feat: configure authelia" && git push
+    ```
+
+4. Adding an app is one of two things:
+
+    - **OIDC-native apps** (OpenCloud, Woodpecker): define an OIDC client under `identity_providers.oidc.clients` in `authelia/app/config.yaml`, then point the app's OIDC issuer at `https://idp.${cloudflare_domain}`. OpenCloud is pre-wired — just keep `[authelia] oidc_client_id`/`oidc_client_secret` matching.
+    - **Everything else** (Jellyfin, Longhorn UI): set the app's `access = "login"` in `cluster.toml`, which renders an `ExternalAuth` filter on the app's HTTPRoute that forwards to Authelia (e.g. `default/jellyfin/app/httproute.yaml`), plus an `access_control` rule in `authelia/app/config.yaml`. See the Authelia [Envoy Auth Server](https://www.authelia.com/integration/kubernetes/envoy/authserver/) docs.
+
 ## 💥 Reset
 
 There might be a situation where you want to destroy your Kubernetes cluster. The following command will reset your nodes back to maintenance mode.
 
 ```sh
-just talos reset
+mise run talos:reset
 ```
 
 ## 🛠️ Talos and Kubernetes Maintenance
@@ -214,10 +293,10 @@ just talos reset
 
 ```sh
 # Preview the rendered machine configs (optional)
-just talos render
+mise run talos:render
 # Apply the config to the node
-just talos apply-node <node>
-# e.g. just talos apply-node k8s-0
+mise run talos:apply-node <node>
+# e.g. mise run talos:apply-node k8s-0
 ```
 
 ### ⬆️ Updating Talos and Kubernetes versions
@@ -227,13 +306,13 @@ just talos apply-node <node>
 
 ```sh
 # Upgrade talos on a node
-just talos upgrade-node <node>
-# e.g. just talos upgrade-node k8s-0
+mise run talos:upgrade-node <node>
+# e.g. mise run talos:upgrade-node k8s-0
 ```
 
 ```sh
 # Upgrade cluster to a newer Kubernetes version
-just talos upgrade-k8s
+mise run talos:upgrade-k8s
 ```
 
 ### ➕ Adding a node to your cluster
@@ -257,11 +336,11 @@ You don't need to re-bootstrap the cluster to add new nodes. Follow these steps:
 
     ```sh
     # Preview the rendered machine configs (optional)
-    just talos render
+    mise run talos:render
 
     # Apply the configuration to the node
-    just talos apply-node <node>
-    # e.g. just talos apply-node k8s-3
+    mise run talos:apply-node <node>
+    # e.g. mise run talos:apply-node k8s-3
     ```
 
 The node should join the cluster automatically and workloads will be scheduled once they report as ready.
@@ -280,7 +359,7 @@ Below is a general guide on trying to debug an issue with an resource or applica
 
 1. Check if the Flux resources are up-to-date and in a ready state:
 
-    📍 _Run `just kube reconcile` to force Flux to sync your Git repository state_
+    📍 _Run `mise run kube:reconcile` to force Flux to sync your Git repository state_
 
     ```sh
     flux get sources git -A
@@ -314,12 +393,12 @@ Below is a general guide on trying to debug an issue with an resource or applica
 
 ## 🧹 Tidy up
 
-Once your cluster is fully configured and you no longer need to run `just configure`, it's a good idea to clean up the repository by removing the [template](./template) directory and any files related to the templating process. This will help eliminate unnecessary clutter from the upstream template repository and resolve any "duplicate registry" warnings from Renovate.
+Once your cluster is fully configured and you no longer need to run `mise run template:configure`, it's a good idea to clean up the repository by removing the [template](./template) directory and any files related to the templating process. This will help eliminate unnecessary clutter from the upstream template repository and resolve any "duplicate registry" warnings from Renovate.
 
 1. Tidy up your repository:
 
     ```sh
-    just template tidy
+    mise run template:tidy
     ```
 
 2. Push your changes to git:
@@ -370,4 +449,3 @@ These tools offer a variety of solutions to meet your persistent storage needs, 
 ### Community Repositories
 
 Community member [@whazor](https://github.com/whazor) created [Kubesearch](https://kubesearch.dev) to allow searching Flux HelmReleases across Github and Gitlab repositories with the `kubesearch` topic.
-

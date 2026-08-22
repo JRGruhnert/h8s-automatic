@@ -9,11 +9,16 @@
 #     passes E2E_CONTROLPLANE_IPS / E2E_WORKER_IPS / E2E_CIDR; the action's
 #     post step destroys them.
 #   - Local: run with no env set; the script boots and destroys the cluster
-#     itself. Requires Docker, /dev/kvm, passwordless sudo, qemu-system-x86,
+#     itself. Requires podman, /dev/kvm, passwordless sudo, qemu-system-x86,
 #     and the repo's mise toolchain on PATH.
 #
 # Renders into the working tree like any configure run.
 set -euo pipefail
+
+log_fatal() {
+    echo "==> fatal: $1" >&2
+    exit 1
+}
 
 NAME="${E2E_NAME:-template-e2e}"
 MODE="${1:-all}"
@@ -61,13 +66,13 @@ cleanup() {
         kubectl get pods --all-namespaces 2>/dev/null || true
         kubectl get gitrepositories,kustomizations,helmreleases --all-namespaces 2>/dev/null || true
         kubectl get events --all-namespaces --sort-by=.lastTimestamp 2>/dev/null | tail -30 || true
-        [ -n "$GIT_SERVER_CONTAINER" ] && docker logs --tail 5 "$GIT_SERVER_CONTAINER" 2>/dev/null || true
+        [ -n "$GIT_SERVER_CONTAINER" ] && podman logs --tail 5 "$GIT_SERVER_CONTAINER" 2>/dev/null || true
         for ip in "${NODES[@]}"; do
             talosctl -n "$ip" dmesg 2>/dev/null | tail -20 || true
         done
     fi
     if [ "$MODE" = all ]; then
-        [ -n "$GIT_SERVER_CONTAINER" ] && docker stop "$GIT_SERVER_CONTAINER" >/dev/null 2>&1 || true
+        [ -n "$GIT_SERVER_CONTAINER" ] && podman stop "$GIT_SERVER_CONTAINER" >/dev/null 2>&1 || true
     fi
     if [ "$MODE" = all ] && [ "$PROVISIONED" = false ]; then
         (cd "$STATE" && sudo -E env TALOSCONFIG="$STATE/talosconfig" \
@@ -82,7 +87,7 @@ trap cleanup EXIT
 
 start_local_git_server() {
     GIT_SERVER_CONTAINER="$NAME-git"
-    docker run --detach --rm --name "$GIT_SERVER_CONTAINER" \
+    podman run --detach --rm --name "$GIT_SERVER_CONTAINER" \
         --publish "$GIT_PORT:23232" \
         --env SOFT_SERVE_GIT_ENABLED=false \
         --env SOFT_SERVE_LFS_ENABLED=false \
@@ -95,7 +100,7 @@ start_local_git_server() {
     deadline=$((SECONDS + 60))
     until git ls-remote "$GIT_PUSH_URL" >/dev/null 2>&1; do
         if (( SECONDS >= deadline )); then
-            just log fatal "Soft Serve is not reachable"
+            log_fatal "Soft Serve is not reachable"
         fi
         sleep 1
     done
@@ -152,8 +157,8 @@ for ip in "${NODES[@]}"; do
 done
 
 echo "==> configure"
-just init
-just configure
+mise run template:init
+mise run template:configure
 
 # Flux's FluxInstance only reports Ready once its Git sync succeeds, so the
 # rendered kubernetes/ tree is committed to a bare repo and served to the
@@ -186,21 +191,21 @@ foundation() {
 deadline=$((SECONDS + 60))
 until git ls-remote "http://$GIT_HOST:$GIT_PORT/repo.git" >/dev/null 2>&1; do
     if (( SECONDS >= deadline )); then
-        just log fatal "Rendered repository server is not reachable"
+        log_fatal "Rendered repository server is not reachable"
     fi
     sleep 1
 done
 echo "==> bootstrap talos"
-just bootstrap talos
+mise run bootstrap:talos
 
 echo "==> bootstrap apps"
-just bootstrap apps
+mise run bootstrap:apps
 assert_cluster_health
 
 echo "==> asserting bootstrap idempotency"
-just configure
-just bootstrap talos
-just bootstrap apps
+mise run template:configure
+mise run bootstrap:talos
+mise run bootstrap:apps
 assert_cluster_health
 }
 
@@ -249,7 +254,7 @@ deadline=$((SECONDS + 60))
 while kubectl exec --namespace default e2e-network-client -- \
     /agnhost connect --timeout=2s "$SERVER_IP:8080" &>/dev/null; do
     if (( SECONDS >= deadline )); then
-        just log fatal "CiliumNetworkPolicy did not block pod traffic"
+        log_fatal "CiliumNetworkPolicy did not block pod traffic"
     fi
     sleep 2
 done
@@ -258,7 +263,7 @@ deadline=$((SECONDS + 60))
 until kubectl exec --namespace default e2e-network-client -- \
     /agnhost connect --timeout=2s "$SERVER_IP:8080" &>/dev/null; do
     if (( SECONDS >= deadline )); then
-        just log fatal "Pod traffic did not recover after removing CiliumNetworkPolicy"
+        log_fatal "Pod traffic did not recover after removing CiliumNetworkPolicy"
     fi
     sleep 2
 done

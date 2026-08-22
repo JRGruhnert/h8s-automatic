@@ -1,0 +1,61 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authelia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authelia
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: authelia
+    spec:
+      containers:
+        - name: authelia
+          image: docker.io/authelia/authelia:4.39.20
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9091
+              name: http
+          volumeMounts:
+            - name: config
+              mountPath: /config/configuration.yaml
+              subPath: configuration.yaml
+            - name: users
+              mountPath: /config/users_database.yml
+              subPath: users_database.yml
+            - name: data
+              mountPath: /config
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: authelia-config
+        - name: users
+          configMap:
+            name: authelia-users
+        - name: data
+          persistentVolumeClaim:
+            claimName: authelia-data
+        - name: secrets
+          secret:
+            secretName: authelia-secret
