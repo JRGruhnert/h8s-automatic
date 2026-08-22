@@ -14,14 +14,6 @@ spec:
       kubernetes: true
       trustedProxies:
         - "#{ kubernetes.pod_cidr }#"
-    httpRoute:
-      enabled: true
-      hostnames:
-        - "{{ .Release.Name }}.${SECRET_DOMAIN}"
-      parentRefs:
-        - name: envoy-#{ 'external' if (echo.access in ['public', 'login']) else 'internal' }#
-          namespace: network
-          sectionName: https
     monitoring:
       serviceMonitor:
         enabled: true
